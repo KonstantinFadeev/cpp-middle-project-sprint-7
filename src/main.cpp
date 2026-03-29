@@ -7,7 +7,7 @@
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
-#include <iostream>
+#include <print>
 #include <string_view>
 
 using boost::asio::async_read_until;
@@ -62,7 +62,7 @@ awaitable<void> session(tcp::socket client_socket, io_service &io_service) {
         server_socket.close();
 
     } catch (const std::exception &e) {
-        std::cerr << "Session error: " << e.what() << std::endl;
+        std::println(stderr, "Session error: {}", e.what());
     }
 }
 
@@ -91,8 +91,7 @@ private:
 int main(int argc, char *argv[]) {
     try {
         if (argc != 2) {
-            std::cerr << "Usage: proxy_server";
-            std::cerr << " <listen_port>\n";
+            std::println(stderr, "Usage: proxy_server <listen_port>");
             return 1;
         }
         io_service io_service(1);
@@ -100,6 +99,6 @@ int main(int argc, char *argv[]) {
         io_service.run();
 
     } catch (const std::exception &e) {
-        std::cerr << "Exception: " << e.what() << std::endl;
+        std::println(stderr, "Exception: {}", e.what());
     }
 }
