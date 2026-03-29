@@ -22,6 +22,7 @@ using boost::asio::ip::tcp;
 using boost::system::error_code;
 
 constexpr std::string_view delimiter = "\r\n\r\n";
+constexpr size_t read_chunk_size = 8192;
 
 awaitable<void> session(tcp::socket client_socket, io_service &io_service) {
     try {
@@ -45,16 +46,29 @@ awaitable<void> session(tcp::socket client_socket, io_service &io_service) {
 
         co_await boost::asio::async_write(client_socket, buffer(server_response), use_awaitable);
 
-        if (content_length.has_value()) {
-            auto headers_end = server_response.find(delimiter);
-            size_t body_already_read = server_response.size() - (headers_end + delimiter.size());
-            size_t remaining = *content_length - body_already_read;
+        auto headers_end = server_response.find(delimiter);
+        size_t body_already_read = server_response.size() - (headers_end + delimiter.size());
 
-            if (remaining > 0) {
+        if (content_length.has_value()) {
+            if (*content_length > body_already_read) {
+                size_t remaining = *content_length - body_already_read;
                 std::string body(remaining, '\0');
                 co_await boost::asio::async_read(server_socket, buffer(body), transfer_at_least(remaining),
                                                  use_awaitable);
                 co_await boost::asio::async_write(client_socket, buffer(body), use_awaitable);
+            }
+        } else {
+            boost::system::error_code ec;
+            std::string chunk(read_chunk_size, '\0');
+            for (;;) {
+                auto n = co_await server_socket.async_read_some(buffer(chunk),
+                                                                boost::asio::redirect_error(use_awaitable, ec));
+                if (n > 0) {
+                    co_await boost::asio::async_write(client_socket, buffer(chunk.data(), n), use_awaitable);
+                }
+                if (ec) {
+                    break;
+                }
             }
         }
 
@@ -69,15 +83,15 @@ awaitable<void> session(tcp::socket client_socket, io_service &io_service) {
 class Server {
 public:
     Server(io_service &io_service, short port)
-        : io_service_(io_service), acceptor_(io_service, tcp::endpoint(tcp::v4(), port)), socket_(io_service) {
+        : io_service_(io_service), acceptor_(io_service, tcp::endpoint(tcp::v4(), port)) {
         do_accept();
     }
 
 private:
     void do_accept() {
-        acceptor_.async_accept(socket_, [this](error_code ec) {
+        acceptor_.async_accept([this](error_code ec, tcp::socket socket) {
             if (!ec) {
-                co_spawn(io_service_, session(std::move(socket_), io_service_), boost::asio::detached);
+                co_spawn(io_service_, session(std::move(socket), io_service_), boost::asio::detached);
             }
             do_accept();
         });
@@ -85,7 +99,6 @@ private:
 
     io_service &io_service_;
     tcp::acceptor acceptor_;
-    tcp::socket socket_;
 };
 
 int main(int argc, char *argv[]) {
