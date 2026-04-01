@@ -76,3 +76,37 @@ TEST(findContentLength, NoContentLength) {
     auto result = findContentLength("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
     EXPECT_FALSE(result.has_value());
 }
+
+TEST(findHostPort, CaseInsensitive) {
+    auto [host, port] = findHostPort("GET / HTTP/1.1\r\nHOST: example.com:8080\r\n\r\n");
+    EXPECT_EQ(host, "example.com");
+    EXPECT_EQ(port, "8080");
+}
+
+TEST(findContentLength, CaseInsensitive) {
+    auto result = findContentLength("HTTP/1.1 200 OK\r\ncontent-length: 512\r\n\r\n");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 512);
+}
+
+TEST(findContentLength, InvalidNotANumber) {
+    auto result = findContentLength("HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\n");
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(findContentLength, InvalidNegative) {
+    auto result = findContentLength("HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n");
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(findContentLength, InvalidTooLarge) {
+    auto result = findContentLength("HTTP/1.1 200 OK\r\nContent-Length: 99999999999\r\n\r\n");
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(iterHeaders, MalformedNoSeparator) {
+    std::vector<std::pair<std::string, std::string>> headers;
+    iterHeaders("GET / HTTP/1.1\r\nBadHeaderNoColon\r\n\r\n",
+                [&](std::string_view name, std::string_view value) { headers.emplace_back(name, value); });
+    EXPECT_TRUE(headers.empty());
+}
